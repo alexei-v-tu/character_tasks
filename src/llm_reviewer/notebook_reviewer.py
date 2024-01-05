@@ -38,7 +38,7 @@ class ThreadSafeProgressCounter:
                 estimated_total_time = (time_elapsed / total_completed) * self.total
             else:
                 estimated_total_time = timedelta(0)
-            time_remaining = estimated_total_time - time_elapsed
+            time_remaining = max(estimated_total_time - time_elapsed, timedelta(0))
             return f"Success: {self.success_count}/{self.total}, Fail: {self.fail_count}/{self.total}, Completed: {total_completed}/{self.total}\nTime remaining: {time_remaining}"
 
 
