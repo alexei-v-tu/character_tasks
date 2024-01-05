@@ -1,8 +1,9 @@
 import os
 import glob
 import pytest
-from llm_reviewer.llm_api import load_config, LLMAPIFactory
-from llm_reviewer.constants import PATH_TO_CONFIG, PATH_TO_SECRETS
+from llm_reviewer.llm_api import LLMAPIFactory
+from src.llm_reviewer.utils import load_config
+from llm_reviewer.constants import PATH_TO_CONFIG
 
 
 @pytest.fixture
@@ -12,7 +13,7 @@ def llm_configs():
 
 @pytest.fixture
 def llm_client():
-    return LLMAPIFactory(PATH_TO_SECRETS).get()
+    return LLMAPIFactory().get()
 
 
 @pytest.fixture

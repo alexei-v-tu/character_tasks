@@ -1,16 +1,11 @@
 import json
 from openai import OpenAI
-from src.llm_reviewer.utils import load_config
+from src.llm_reviewer.utils import load_env
 
 
 class LLMAPIFactory:
-    def __init__(self, secrets_file_path: str):
-        self.secrets_file_path = secrets_file_path
-        self._api_key = self._load_api_key()
-
-    def _load_api_key(self) -> str:
-        config = load_config(self.secrets_file_path)
-        return config["openai_api_key"]
+    def __init__(self):
+        self._api_key = load_env()["OPENAI_API_KEY"]
 
     def get(self) -> OpenAI:
         return OpenAI(api_key=self._api_key)

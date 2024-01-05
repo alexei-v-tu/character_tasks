@@ -3,8 +3,9 @@ import traceback
 from typing import Any, Optional
 from src.llm_reviewer.notebook_parser import notebook_to_turns
 from src.llm_reviewer.turn_reviewer import review_turn
-from src.llm_reviewer.llm_api import load_config, LLMAPIFactory
-from src.llm_reviewer.constants import PATH_TO_CONFIG, PATH_TO_SECRETS, Roles
+from src.llm_reviewer.llm_api import LLMAPIFactory
+from src.llm_reviewer.utils import load_config
+from src.llm_reviewer.constants import PATH_TO_CONFIG, Roles
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 import pandas as pd
@@ -94,7 +95,7 @@ def turn_reviewer_worker(
     verbose: int = 0,
 ) -> None:
     try:
-        llm_client = LLMAPIFactory(PATH_TO_SECRETS).get()
+        llm_client = LLMAPIFactory().get()
         while not turn_review_queue.empty():
             turn_id = None
             reviewer = None
@@ -165,8 +166,7 @@ def review_notebook(
         results = []
         max_threads = min(total_turns * 2, max_threads)
         if max_threads == 0:
-            if verbose > 0:
-                print(f"Review process completed unsuccessfully. {notebook['file_id']}")
+            print(f"Review process completed unsuccessfully. {notebook['file_id']}")
             return None
         with ThreadPoolExecutor(max_workers=max_threads) as executor:
             for _ in range(max_threads):
@@ -196,9 +196,8 @@ def review_notebook(
         success = True
         return {"turns": gathered_results, "nb_path": notebook["file_id"]}
     except Exception as e:
-        if verbose > 0:
-            print(f"Review process completed unsuccessfully. {notebook['file_id']}")
-            traceback.print_exc()
+        print(f"Review process completed unsuccessfully. {notebook['file_id']}")
+        traceback.print_exc()
         return None
     finally:
         if progress_counter:
