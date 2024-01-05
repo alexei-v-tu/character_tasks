@@ -1,5 +1,6 @@
+from datetime import datetime, timedelta
 import traceback
-from typing import Any
+from typing import Any, Optional
 from src.llm_reviewer.notebook_parser import notebook_to_turns
 from src.llm_reviewer.turn_reviewer import review_turn
 from src.llm_reviewer.llm_api import load_config, LLMAPIFactory
@@ -7,6 +8,38 @@ from src.llm_reviewer.constants import PATH_TO_CONFIG, PATH_TO_SECRETS, Roles
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 import pandas as pd
+from threading import Lock, Thread
+import threading
+
+
+# Define a thread-safe counter class
+class ThreadSafeProgressCounter:
+    def __init__(self, total):
+        self.start_time = datetime.now()
+        self.success_count = 0
+        self.fail_count = 0
+        self.total = total
+        self._lock = Lock()
+
+    def success(self):
+        with self._lock:
+            self.success_count += 1
+
+    def fail(self):
+        with self._lock:
+            self.fail_count += 1
+
+    def report(self):
+        with self._lock:
+            total_completed = self.success_count + self.fail_count
+            time_elapsed = datetime.now() - self.start_time
+            if total_completed > 0:
+                estimated_total_time = (time_elapsed / total_completed) * self.total
+            else:
+                estimated_total_time = timedelta(0)
+            time_remaining = estimated_total_time - time_elapsed
+            return f"Success: {self.success_count}/{self.total}, Fail: {self.fail_count}/{self.total}, Completed: {total_completed}/{self.total}\nTime remaining: {time_remaining}"
+
 
 from enum import Enum
 
@@ -58,6 +91,7 @@ def turn_reviewer_worker(
     config: dict[str, Any],
     results: list[dict],
     total_reviews: int,
+    verbose: int = 0,
 ) -> None:
     try:
         llm_client = LLMAPIFactory(PATH_TO_SECRETS).get()
@@ -68,9 +102,10 @@ def turn_reviewer_worker(
             try:
                 reviews_done = len(results)
                 reviews_left = turn_review_queue.qsize() - 1
-                print(
-                    f"Reviews done: {reviews_done}, Reviews left after this one: {reviews_left}"
-                )
+                if verbose > 0:
+                    print(
+                        f"Reviews done: {reviews_done}, Reviews left after this one: {reviews_left}"
+                    )
                 turn_id, reviewer, turn = turn_review_queue.get()
                 r = review_turn(
                     reviewer,
@@ -81,15 +116,18 @@ def turn_reviewer_worker(
                 results.append({"id": turn_id, "reviewer": reviewer, "result": r})
             except Exception as e:
                 msg = f"An error occurred while processing {turn_id=} for {reviewer=}: {e}"
-                print(msg)
+                if verbose > 0:
+                    print(msg)
                 results.append({"id": turn_id, "reviewer": reviewer, "result": "ERROR"})
             finally:
                 turn_review_queue.task_done()
-                print(
-                    f"Review for {turn_id=} by {reviewer=} is done. {len(results)} / {total_reviews} reviews completed."
-                )
+                if verbose > 0:
+                    print(
+                        f"Review for {turn_id=} by {reviewer=} is done. {len(results)} / {total_reviews} reviews completed."
+                    )
     except Exception as e:
-        traceback.print_exc()
+        if verbose > 0:
+            traceback.print_exc()
         return None
 
 
@@ -99,7 +137,12 @@ def populate_queue(queue: Queue, turns: list) -> None:
         queue.put((i, "code_reviewer", turn))
 
 
-def review_notebook(notebook, max_threads=1) -> dict[str, list[dict[str, Any]]]:
+def review_notebook(
+    notebook,
+    max_threads=1,
+    progress_counter: Optional[ThreadSafeProgressCounter] = None,
+    verbose: int = 0,
+) -> dict[str, list[dict[str, Any]]]:
     """
     Review a notebook file and return a list of dictionaries, each representing a review result.
     Each dictionary in the list has two keys: 'turn' and 'review'.
@@ -107,8 +150,10 @@ def review_notebook(notebook, max_threads=1) -> dict[str, list[dict[str, Any]]]:
     'review' is the result of the LLM review for the LLM Assistant part of the turn.
 
     :param nb_path: The path to the notebook file.
+    :param verbose: Verbosity level of the output. If 1, output notebook reviews; if 0, no output.
     :return: A list of dictionaries, each representing the review result of a turn.
     """
+    success = False
     try:
         config = load_config(PATH_TO_CONFIG)
 
@@ -120,12 +165,18 @@ def review_notebook(notebook, max_threads=1) -> dict[str, list[dict[str, Any]]]:
         results = []
         max_threads = min(total_turns * 2, max_threads)
         if max_threads == 0:
-            print(f"Review process completed UNsuccessfully. {notebook['file_id']}")
+            if verbose > 0:
+                print(f"Review process completed unsuccessfully. {notebook['file_id']}")
             return None
         with ThreadPoolExecutor(max_workers=max_threads) as executor:
             for _ in range(max_threads):
                 executor.submit(
-                    turn_reviewer_worker, turn_queue, config, results, total_turns * 2
+                    turn_reviewer_worker,
+                    turn_queue,
+                    config,
+                    results,
+                    total_turns * 2,
+                    0 if verbose in [0, 1] else 1,
                 )
         turn_queue.join()
 
@@ -142,17 +193,26 @@ def review_notebook(notebook, max_threads=1) -> dict[str, list[dict[str, Any]]]:
                 gathered_results[turn_id]["code_review"] = review_result
             else:
                 raise Exception(f"Unknown reviewer: {reviewer}")
-
-        print("Review process completed successfully.")
-
+        success = True
         return {"turns": gathered_results, "nb_path": notebook["file_id"]}
     except Exception as e:
-        print(f"Review process completed UNsuccessfully. {notebook['file_id']}")
-        traceback.print_exc()
+        if verbose > 0:
+            print(f"Review process completed unsuccessfully. {notebook['file_id']}")
+            traceback.print_exc()
         return None
+    finally:
+        if progress_counter:
+            if success:
+                progress_counter.success()
+            else:
+                progress_counter.fail()
+            if verbose > 0:
+                print("Notebook reviews done:", progress_counter.report())
 
 
-def review_notebooks(notebooks, max_threads_per_notebook=1, max_concurrent_notebooks=1):
+def review_notebooks(
+    notebooks, max_threads_per_notebook=1, max_concurrent_notebooks=1, verbose=1
+):
     """
     Review multiple notebook files in parallel and return a list of review results for each notebook.
 
@@ -165,9 +225,13 @@ def review_notebooks(notebooks, max_threads_per_notebook=1, max_concurrent_noteb
     if not notebooks:
         return []
     with ThreadPoolExecutor(max_workers=max_concurrent_notebooks) as executor:
+        progress_counter = ThreadSafeProgressCounter(len(notebooks))
         results = executor.map(
             lambda nb_path: review_notebook(
-                nb_path, max_threads=max_threads_per_notebook
+                nb_path,
+                max_threads=max_threads_per_notebook,
+                progress_counter=progress_counter,
+                verbose=verbose,
             ),
             notebooks,
         )
@@ -196,11 +260,15 @@ def review_to_row(review, issue_level=None):
         english_review = turn.get("english_review")
         code_review = turn.get("code_review")
 
-        # Append scores or handle errors
+        # Check for score presence and append scores or handle errors
         lang_score = (
-            english_review["score"] if isinstance(english_review, dict) else "ERROR"
+            english_review.get("score", None)
+            if isinstance(english_review, dict)
+            else "ERROR"
         )
-        code_score = code_review["score"] if isinstance(code_review, dict) else "ERROR"
+        code_score = (
+            code_review.get("score", None) if isinstance(code_review, dict) else "ERROR"
+        )
         if lang_score != "ERROR":
             lang_scores.append(lang_score)
         if code_score != "ERROR":
@@ -223,8 +291,14 @@ def review_to_row(review, issue_level=None):
             english_feedback_lines = []
             for k, v in english_feedback.items():
                 try:
-                    if v.strip() and k in STR_TO_ISSUE_LEVEL and STR_TO_ISSUE_LEVEL[k].value >= issue_level.value:
-                        english_feedback_lines.append(f"**{k.title()}**\n{v if v.strip() else 'None'}")
+                    if (
+                        v.strip()
+                        and k in STR_TO_ISSUE_LEVEL
+                        and STR_TO_ISSUE_LEVEL[k].value >= issue_level.value
+                    ):
+                        english_feedback_lines.append(
+                            f"**{k.title()}**\n{v if v.strip() else 'None'}"
+                        )
                 except Exception as e:
                     print(k, v)
             english_feedback = "\n".join(english_feedback_lines)
@@ -234,8 +308,14 @@ def review_to_row(review, issue_level=None):
             code_feedback_lines = []
             for k, v in code_feedback.items():
                 try:
-                    if v.strip() and k in STR_TO_ISSUE_LEVEL and STR_TO_ISSUE_LEVEL[k].value >= issue_level.value:
-                        code_feedback_lines.append(f"**{k.title()}**\n{v if v.strip() else 'None'}")
+                    if (
+                        v.strip()
+                        and k in STR_TO_ISSUE_LEVEL
+                        and STR_TO_ISSUE_LEVEL[k].value >= issue_level.value
+                    ):
+                        code_feedback_lines.append(
+                            f"**{k.title()}**\n{v if v.strip() else 'None'}"
+                        )
                 except Exception as e:
                     print(k, v)
             code_feedback = "\n".join(code_feedback_lines)
@@ -257,9 +337,15 @@ def review_to_row(review, issue_level=None):
             f"#Turn {i+1}:\n\n## Language({lang_score}/5):\n{english_feedback}"
         )
 
-    # Calculate average scores
-    avg_code_score = sum(code_scores) / len(code_scores) if code_scores else None
-    avg_lang_score = sum(lang_scores) / len(lang_scores) if lang_scores else None
+    # Calculate average scores with valid values only
+    valid_code_scores = [score for score in code_scores if score is not None]
+    valid_lang_scores = [score for score in lang_scores if score is not None]
+    avg_code_score = (
+        sum(valid_code_scores) / len(valid_code_scores) if valid_code_scores else None
+    )
+    avg_lang_score = (
+        sum(valid_lang_scores) / len(valid_lang_scores) if valid_lang_scores else None
+    )
     combined_feedback = "\n\n======\n\n".join(combined_feedback)
     return {
         "nb_path": nb_path,

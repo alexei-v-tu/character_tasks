@@ -18,4 +18,4 @@
 - Looks like it’s copied from ChatGPT.
 
 ### 1 - Poor
-- Incomplete or Missing code.
+- Incomplete or Code required by context of the interaction but missing.

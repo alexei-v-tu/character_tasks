@@ -19,11 +19,12 @@ class LLMAPIFactory:
 def make_llm_request(
     client,
     messages: list[dict[str, str]],
-    model: str  = None,
+    model: str = None,
     temperature: float = 1.0,
     max_tokens: int = 4000,
-    response_format: str  = None,
+    response_format: str = None,
     retries: int = 3,
+    seed=42,
 ) -> str:
     if response_format not in [{"type": "json_object"}, None]:
         raise ValueError(
@@ -43,6 +44,7 @@ def make_llm_request(
                 temperature=temperature,
                 max_tokens=max_tokens,
                 response_format=response_format,
+                seed=seed,
             )
             if completion.choices[0].finish_reason != "stop":
                 raise Exception(

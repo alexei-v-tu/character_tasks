@@ -78,19 +78,26 @@ def fix_missing_roles(messages):
 
     :param messages: The list of messages.
     """
+
     def predict_role(messages_subsequence):
         try:
             openai_client = OpenAI(api_key=openai_api_key)
             response = openai_client.chat.completions.create(
                 model="gpt-4-1106-preview",
                 messages=[
-                    {"role":"system", "content": "Your task is to accurately predict whether the empty role is a User or an Assistant. You are only allowed to reply with a single word: 'User' or 'Assistant'."},
-                    {"role":"user", "content": f"Here's a part of the conversation including an empty role:\n\n{messages_subsequence}"}
+                    {
+                        "role": "system",
+                        "content": "Your task is to accurately predict whether the empty role is a User or an Assistant. You are only allowed to reply with a single word: 'User' or 'Assistant'.",
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Here's a part of the conversation including an empty role:\n\n{messages_subsequence}",
+                    },
                 ],
                 temperature=0,
-                seed=42
+                seed=42,
             )
-            print(response.choices[0])
+            print("Filling out missing header...")
             missing_role = response.choices[0].message.content
             assert missing_role in ["User", "Assistant"]
             return missing_role, None
@@ -100,7 +107,7 @@ def fix_missing_roles(messages):
     errors = []
     for i in range(len(messages)):
         if messages[i]["role"] == "":
-            subsequence = messages[max(0, i-2):min(len(messages), i+3)]
+            subsequence = messages[max(0, i - 2) : min(len(messages), i + 3)]
             messages[i]["role"], error = predict_role(subsequence)
             if error is not None:
                 errors.append(error)

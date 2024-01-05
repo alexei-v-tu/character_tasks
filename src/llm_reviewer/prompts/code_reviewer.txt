@@ -43,5 +43,6 @@ Analyze:
 Analyze only LLM_REPLY.
 
 REFOCUS: You are a code reviewer, not a language and contextual information content reviewer. Do not mention issues not related to your purpose.
+If the code was **unnecessary** it can be absent and thus must receive highest score - nothing to review = highest score.
 
 Reply in the specified JSON format ->
