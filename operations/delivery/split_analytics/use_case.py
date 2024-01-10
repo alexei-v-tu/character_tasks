@@ -1,17 +1,16 @@
-from pydantic import BaseModel, Field
-from typing import List
+import concurrent.futures
+import json
 import os
+from typing import List
+
+from dotenv import find_dotenv, load_dotenv
+from llama_index.llms.openai import OpenAI
 from llama_index.program import OpenAIPydanticProgram
-from llama_index.llms.openai import OpenAI
-
-from dotenv import load_dotenv, find_dotenv
-
-load_dotenv(find_dotenv())
-from pydantic import BaseModel
-from llama_index.llms.openai import OpenAI
+from pydantic import BaseModel, Field
+from tqdm import tqdm
 from utils import process_batch
 
-
+load_dotenv(find_dotenv())
 api_key = os.environ["OPENAI_API_KEY"]
 
 
@@ -20,6 +19,9 @@ class SummaryResult(BaseModel):
 
     summary: str = Field(
         description="A short summary containing up to 4 sentences focused on the specific theme."
+    )
+    tags: List[str] = Field(
+        description="A list of tags(up to 5) for the conversation from the requested theme perspective."
     )
 
 
@@ -44,7 +46,7 @@ def exec_summary(conversation: List[List[dict]], summary_theme: SummaryTheme):
         llm=OpenAI(api_key=api_key, model="gpt-4-1106-preview", temperature=0),
         output_cls=SummaryResult,
         prompt_template_str=prompt_template_str,
-        verbose=True,
+        verbose=False,
     )
     output = program(
         summary_theme=summary_theme.model_dump(), conversation=conversation["messages"]
@@ -52,14 +54,12 @@ def exec_summary(conversation: List[List[dict]], summary_theme: SummaryTheme):
     return output
 
 
-import json
-from tqdm import tqdm
-import concurrent.futures
-
-
 def process_conversation(conversation):
     output = exec_summary(
-        conversation, SummaryTheme(theme="User Use Case, how user uses the Assistant")
+        conversation,
+        SummaryTheme(
+            theme="User Use Case, how user uses the Assistant in general terms, **for what** the User is using it and **how**"
+        ),
     )
     record = {
         "id": conversation["id"],
@@ -69,8 +69,10 @@ def process_conversation(conversation):
     return record
 
 
-def get_use_case_data_batch_conversations(batch_folder, max_workers=10):
-    selected_conversations = process_batch(batch_folder)
+def get_use_case_data_batch_conversations(
+    batch_folder, max_workers=10, limit_items_to_first_n=None
+):
+    selected_conversations = process_batch(batch_folder, limit=limit_items_to_first_n)
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [

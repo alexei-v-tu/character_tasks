@@ -38,8 +38,10 @@ turing_palette = [
 ]
 
 
-def process_batch(batch_folder):
+def process_batch(batch_folder, limit=None):
     file_list = [file for file in os.listdir(batch_folder) if file.endswith(".json")]
+    if limit is not None:
+        file_list = file_list[:limit]
     conversations = []
     for file_name in file_list:
         with open(f"{batch_folder}/{file_name}", "r") as f:

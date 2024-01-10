@@ -1,5 +1,6 @@
 AOF_SHEET_ID = "1bsM3nz13BPPqCxmbLYFz5Ed9KOfV51hNoagBP8dP948"
 AOF_SHEET_NAME = "Areas status"
+from tqdm import tqdm
 from utils import PROJECT_ROOT
 from src.sheets_utils import download_sheet_as_df
 from pydantic import BaseModel, Field
@@ -15,7 +16,7 @@ api_key = os.environ["OPENAI_API_KEY"]
 load_dotenv(find_dotenv())
 from pydantic import BaseModel
 from llama_index.llms.openai import OpenAI
-from utils import process_batch
+from utils import process_batch, service_account_path
 
 
 def format_topics_with_additional(df):
@@ -24,7 +25,7 @@ def format_topics_with_additional(df):
     for _, row in df.iterrows():
         highlevel = row["Highlevel_topic"]
         sublevel = row["Sublevel_topic"]
-        if highlevel != last_highlevel:
+        if highlevel != last_highlevel and last_highlevel is not None:
             topics.append(
                 f"{last_highlevel} -> [[fill out another topic you think best fits the conversation and is not included]]"
             )
@@ -75,7 +76,7 @@ def classify_conversation_by_domain(
         llm=OpenAI(api_key=api_key, model="gpt-4-1106-preview", temperature=0),
         output_cls=DomainCategory,
         prompt_template_str=prompt_template_str,
-        verbose=True,
+        verbose=False,
     )
     output = program(
         categories=domain_categories,
@@ -87,8 +88,8 @@ def classify_conversation_by_domain(
 import concurrent.futures
 
 
-def process_file(conversation):
-    output = classify_conversation_by_domain(conversation)
+def process_file(conversation, domain_categories):
+    output = classify_conversation_by_domain(conversation, domain_categories)
     record = {
         "id": conversation["id"],
         "colab_link": f"https://colab.research.google.com/drive/{conversation['id']}",
@@ -97,12 +98,15 @@ def process_file(conversation):
     return record
 
 
-def get_areas_of_focus_data_batch_conversations(selected_batch_folder, max_workers=10):
-    aof_df = download_sheet_as_df(PROJECT_ROOT, AOF_SHEET_ID, AOF_SHEET_NAME)
+def get_areas_of_focus_data_batch_conversations(
+    selected_batch_folder, max_workers=10, limit_items_to_first_n=None
+):
+    aof_df = download_sheet_as_df(service_account_path, AOF_SHEET_ID, AOF_SHEET_NAME)
     formatted_topics = format_topics_with_additional(aof_df)
-    print(formatted_topics)
     DOMAIN_CATEGORIES = formatted_topics
-    selected_conversations = process_batch(selected_batch_folder)
+    selected_conversations = process_batch(
+        selected_batch_folder, limit=limit_items_to_first_n
+    )
     results = []
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -110,8 +114,11 @@ def get_areas_of_focus_data_batch_conversations(selected_batch_folder, max_worke
             executor.submit(process_file, conversation, DOMAIN_CATEGORIES)
             for conversation in selected_conversations
         ]
+        progress_bar = tqdm(total=len(futures), desc="Processing Conversations")
         for future in concurrent.futures.as_completed(futures):
             results.append(future.result())
+            progress_bar.update(1)
+        progress_bar.close()
 
     high_level_topics = set(aof_df["Highlevel_topic"].tolist())
     sub_level_topics = set(aof_df["Sublevel_topic"].tolist())
