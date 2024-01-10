@@ -231,7 +231,7 @@ def download_parse_delivered_into_jsonl(
                 os.makedirs(batch_folder)
             drive_id = conversation["id"]
             with open(f"{batch_folder}{drive_id}.json", "w") as f:
-                f.write(json.dumps(conversation))
+                f.write(json.dumps({"batch_id": batch_id, **conversation}))
     else:
         parsed_conversations = []
         for batch_id in batch_ids:
@@ -243,6 +243,8 @@ def download_parse_delivered_into_jsonl(
                         with open(f"{batch_folder}{file_name}", "r") as f:
                             conversation = json.load(f)
                             parsed_conversations.append(conversation)
+            else:
+                raise Exception(f"Batch folder for {batch_name} not found")
 
     return {"delivered_df": delivered_df, "conversations": parsed_conversations}
 

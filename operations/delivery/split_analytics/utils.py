@@ -1,6 +1,6 @@
 import os
 import sys
-
+import json
 
 PROJECT_ROOT = os.getcwd()
 
@@ -36,6 +36,16 @@ turing_palette = [
     "#EFEFEF",  # Anti-flash white
     "#000000",  # Black
 ]
+
+
+def process_batch(batch_folder):
+    file_list = [file for file in os.listdir(batch_folder) if file.endswith(".json")]
+    conversations = []
+    for file_name in file_list:
+        with open(f"{batch_folder}/{file_name}", "r") as f:
+            conversation = json.load(f)
+            conversations.append(conversation)
+    return conversations
 
 
 def get_delivered_df(batch_ids=[1, 2, 3, 4]):

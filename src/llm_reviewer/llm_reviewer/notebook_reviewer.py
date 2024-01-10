@@ -1,8 +1,9 @@
 from typing import Any
 from src.llm_reviewer.notebook_parser import parse_notebook
 from src.llm_reviewer.turn_reviewer import review_turn
-from src.llm_reviewer.llm_api import load_config, LLMAPIFactory
-from src.llm_reviewer.constants import PATH_TO_CONFIG, PATH_TO_SECRETS, Roles
+from src.llm_reviewer.llm_api import LLMAPIFactory
+from src.llm_reviewer.utils import load_config
+from src.llm_reviewer.constants import PATH_TO_CONFIG, Roles
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 import pandas as pd
@@ -43,7 +44,7 @@ def turn_reviewer_worker(
     results: list[dict],
     total_reviews: int,
 ) -> None:
-    llm_client = LLMAPIFactory(PATH_TO_SECRETS).get()
+    llm_client = LLMAPIFactory().get()
     while not turn_review_queue.empty():
         turn_id = None
         reviewer = None
