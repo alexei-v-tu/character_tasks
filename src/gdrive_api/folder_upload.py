@@ -1,24 +1,28 @@
 import os
+from concurrent.futures import ThreadPoolExecutor
+from queue import Queue
 from typing import Optional
 
-from googleapiclient.http import MediaFileUpload
 from googleapiclient.discovery import Resource
-
+from googleapiclient.http import MediaFileUpload
 from src.gdrive_api.utils import (
-    get_nested_folder_id,
-    get_file_id,
     create_folder_path,
     extract_folder_id,
+    get_file_id,
+    get_nested_folder_id,
 )
+from src.gdrive_api.auth import build_service
 
 
 class FolderNotFoundError(Exception):
     """Exception raised when the local source folder is not found."""
+
     pass
 
 
 class UploadError(Exception):
     """Exception raised for errors that occur during file upload."""
+
     pass
 
 
@@ -68,45 +72,25 @@ def upload_file(
     return file_url
 
 
-def upload_folder(
+def sync_folder_structure(
     service: Resource,
     source_folder_path: str,
-    destination_folder: str,
-    force_replace: bool = False,
-    is_url: bool = True,
-) -> dict[str, str]:
-    """Recursively upload a local folder to Google Drive.
+    destination_folder_id: str,
+) -> None:
+    """Create folder structure in Google Drive.
 
     Args:
         service: The Google Drive service resource.
         source_folder_path: The path to the local folder to upload.
-        destination_folder: The ID or URL of the destination folder in Google Drive.
-        force_replace: If True, re-upload files even if they exist.
-        is_url: A flag indicating whether the provided destination is a URL. Default is True.
-
-    Raises:
-        FolderNotFoundError: If the local folder does not exist.
-        UploadError: If an error occurs during file upload.
-
-    Returns:
-        Dict of relative file path -> URL for the file after upload, URL is None if it was skipped due to force replace.
+        destination_folder_id: The ID of the destination folder in Google Drive.
     """
-    destination_folder_id = extract_folder_id(destination_folder, is_url)
-    if not os.path.exists(source_folder_path):
-        raise FolderNotFoundError(
-            f"Local folder '{source_folder_path}' does not exist."
-        )
+    total_dirs = 0
+    for root, dirs, _ in os.walk(source_folder_path):
+        relative_path = os.path.relpath(root, source_folder_path)
+        total_dirs += len(dirs)
+    processed_dirs = -1
 
-    total_dirs = sum([len(dirs) for _, dirs, _ in os.walk(source_folder_path)])
-    total_files = sum([len(files) for _, _, files in os.walk(source_folder_path)])
-    dir_counter = 0
-    file_counter = 0
-
-    uploaded_files_count = 0
-    skipped_files_count = 0
-    uploaded_files = {}
-    for root, dirs, files in os.walk(source_folder_path):
-        dir_counter += 1
+    for root, dirs, _ in os.walk(source_folder_path):
         relative_path = os.path.relpath(root, source_folder_path)
         current_folder_id = (
             destination_folder_id
@@ -115,41 +99,134 @@ def upload_folder(
         )
 
         if current_folder_id is None:
-            current_folder_id = create_folder_path(
-                service, relative_path, destination_folder_id
-            )
+            create_folder_path(service, relative_path, destination_folder_id)
 
-        print("-" * 60)
+        processed_dirs += 1
         print(
-            f"Processing directory {relative_path}: {dir_counter} of {total_dirs} in total."
+            f"Synced directory structure: {processed_dirs} out of {total_dirs} directories."
         )
-        for index, file_name in enumerate(files, start=1):
-            file_counter += 1
-            file_path = os.path.join(root, file_name)
-            print(
-                f"Uploading file {index} of {len(files)} in '{relative_path}', {file_counter} of {total_files} in total."
-            )
-            try:
-                file_url = upload_file(
-                    service, file_path, current_folder_id, force_replace
-                )
-                relative_file_path = os.path.relpath(file_path, source_folder_path)
-                print(relative_file_path)
-                print("=" * 90)
-                if file_url is not None:
-                    uploaded_files_count += 1
-                    uploaded_files[relative_file_path] = file_url
-                else:
-                    skipped_files_count += 1
-                    uploaded_files[relative_file_path] = None
-            except Exception as e:
-                raise UploadError(
-                    f"An error occurred while uploading '{file_name}': {e}"
-                )
 
-    print("=" * 60)
+
+def add_files_to_queue(
+    service: Resource,
+    source_folder_path: str,
+    destination_folder_id: str,
+    file_queue: Queue,
+) -> None:
+    """Add files to be uploaded to the queue.
+
+    Args:
+        service: The Google Drive service resource.
+        source_folder_path: The path to the local folder to upload.
+        destination_folder_id: The ID of the destination folder in Google Drive.
+        file_queue: The queue to which files will be added.
+    """
+    for root, _, files in os.walk(source_folder_path):
+        relative_path = os.path.relpath(root, source_folder_path)
+        current_folder_id = get_nested_folder_id(
+            service, relative_path, destination_folder_id
+        )
+
+        for file_name in files:
+            file_path = os.path.join(root, file_name)
+            relative_file_path = os.path.relpath(file_path, source_folder_path)
+            file_queue.put((file_path, current_folder_id, relative_file_path))
+
+
+def worker(
+    creds_file_path: str,
+    file_queue: Queue,
+    uploaded_files: dict[str, Optional[str]],
+    force_replace: bool,
+    total_files: int,
+) -> None:
+    """Function to be run by each thread.
+
+    Args:
+        service: The Google Drive service resource.
+        file_queue: The queue from which files will be uploaded.
+        uploaded_files: Dict of relative file path -> URL for the file after upload, URL is None if it was skipped due to force replace. "ERROR" if there was an error during the upload.
+        force_replace: If True, re-upload files even if they exist.
+    """
+    service = build_service(creds_file_path)
+    while not file_queue.empty():
+        file_path, current_folder_id, relative_file_path = file_queue.get()
+        print(
+            f"Processing {relative_file_path} {file_queue.qsize()} left after this one"
+        )
+        try:
+            file_url = upload_file(service, file_path, current_folder_id, force_replace)
+            if file_url is not None:
+                uploaded_files[relative_file_path] = file_url
+            else:
+                uploaded_files[relative_file_path] = None
+
+            files_processed = total_files - file_queue.qsize()
+            print(f"Files processed: {files_processed}/{total_files}")
+        except Exception as e:
+            msg = f"An error occurred while uploading '{relative_file_path}': {e}"
+            print(msg)
+            uploaded_files[relative_file_path] = "ERROR"
+        finally:
+            file_queue.task_done()
+
+
+def upload_folder(
+    creds_file_path: str,
+    source_folder_path: str,
+    destination_folder: str,
+    force_replace: bool = False,
+    is_url: bool = True,
+    max_threads: int = 20,
+) -> dict[str, Optional[str]]:
+    """Recursively upload a local folder to Google Drive.
+
+    Args:
+        service: The Google Drive service resource.
+        source_folder_path: The path to the local folder to upload.
+        destination_folder: The ID or URL of the destination folder in Google Drive.
+        force_replace: If True, re-upload files even if they exist.
+        is_url: A flag indicating whether the provided destination is a URL. Default is True.
+        max_threads: Maximum number of threads to be used for file upload - same as number of files being uploaded concurrently.
+
+    Raises:
+        FolderNotFoundError: If the local folder does not exist.
+        UploadError: If an error occurs during file upload.
+
+    Returns:
+        Dict of relative file path -> URL for the file after upload, URL is None if it was skipped due to force replace. "ERROR" if there was an error during the upload.
+    """
+    service = build_service(creds_file_path)
+    destination_folder_id = extract_folder_id(destination_folder, is_url)
+    if not os.path.exists(source_folder_path):
+        raise FolderNotFoundError(
+            f"Local folder '{source_folder_path}' does not exist."
+        )
+    sync_folder_structure(service, source_folder_path, destination_folder_id)
+
+    total_files = sum([len(files) for _, _, files in os.walk(source_folder_path)])
+    file_queue = Queue()
+    uploaded_files = {}
+
+    add_files_to_queue(service, source_folder_path, destination_folder_id, file_queue)
+
+    with ThreadPoolExecutor(max_workers=max_threads) as executor:
+        for _ in range(min(total_files, max_threads)):
+            executor.submit(
+                worker,
+                creds_file_path,
+                file_queue,
+                uploaded_files,
+                force_replace,
+                total_files,
+            )
+    file_queue.join()
+
+    uploaded_files_count = len(
+        [url for url in uploaded_files.values() if url is not None]
+    )
+    skipped_files_count = total_files - uploaded_files_count
+
     print(f"Successfully uploaded {uploaded_files_count} files out of {total_files}.")
     print(f"Skipped {skipped_files_count} files.")
-    print(f"Successfully processed {total_dirs} directories.")
-    print("=" * 60)
     return uploaded_files

@@ -1,8 +1,10 @@
 from typing import List
-
 from googleapiclient.discovery import Resource
-
-from src.gdrive_api.utils import create_folder_path, extract_folder_id
+from src.gdrive_api.utils import (
+    create_folder_path,
+    extract_folder_id,
+    list_all_files_in_folder,
+)
 
 
 def clone_contents(service: Resource, source_id: str, dest_id: str):
@@ -13,13 +15,8 @@ def clone_contents(service: Resource, source_id: str, dest_id: str):
         source_id: The ID of the source folder in Google Drive.
         dest_id: The ID of the destination folder in Google Drive.
     """
-    query = f"'{source_id}' in parents and trashed = false"
-    response = (
-        service.files()
-        .list(q=query, spaces="drive", fields="files(id, name, mimeType)")
-        .execute()
-    )
-    for item in response.get("files", []):
+    all_files = list_all_files_in_folder(service, source_id)
+    for item in all_files:
         if item["mimeType"] == "application/vnd.google-apps.folder":
             # It's a folder, create it and clone its contents
             new_folder_id = create_folder_path(service, item["name"], dest_id)
