@@ -30,7 +30,7 @@ def backup_folder(
     subfolder_id = create_folder_path(service, subfolder_name, destination_parent_id)
 
     # Clone the source folder to the new subfolder
-    clone_drive_folder(service, source_folder_id, subfolder_id, is_url)
+    clone_drive_folder(service, source_folder_id, subfolder_id, is_url=False)
     print(
         f"Backup of folder '{source_folder}' to subfolder '{subfolder_name}' in folder '{destination_parent}' completed."
     )

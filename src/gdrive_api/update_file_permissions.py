@@ -1,8 +1,5 @@
 from enum import Enum
-from typing import List
-
 from googleapiclient.errors import HttpError
-
 from src.gdrive_api.utils import extract_file_id
 
 
@@ -56,7 +53,7 @@ def update_file_permissions(
     try:
         file_id = extract_file_id(file, is_url)
         permission = {"type": "user", "role": role.value, "emailAddress": user_email}
-        remove_permissions(service, file_id, user_email)
+        remove_permissions(service, file_id, user_email, is_url=False)
         if role != Role.REMOVE:
             service.permissions().create(fileId=file_id, body=permission).execute()
             print(f"Updated {user_email}'s permissions to {role.value}.")
@@ -65,7 +62,7 @@ def update_file_permissions(
 
 
 def update_permissions_for_multiple_users(
-    service, users_permissions: "dict[str, dict[str, Role]]", is_url=True
+    service, users_permissions: dict[str, dict[str, Role]], is_url=True
 ):
     """
     Update permissions for multiple users across multiple files.
@@ -88,7 +85,7 @@ def update_permissions_for_multiple_users(
 
 
 def update_permissions_for_multiple_files(
-    service, user_email: str, files_permissions: "dict[str, Role]", is_url=True
+    service, user_email: str, files_permissions: dict[str, Role], is_url=True
 ):
     """
     Update permissions for a single user across multiple files.
@@ -104,7 +101,7 @@ def update_permissions_for_multiple_files(
 
 
 def update_permissions_for_user(
-    service, user_email: str, role: Role, file_ids_or_urls: List[str], is_url=True
+    service, user_email: str, role: Role, file_ids_or_urls: list[str], is_url=True
 ):
     """
     Update permissions for a single user and a single role across multiple files.
