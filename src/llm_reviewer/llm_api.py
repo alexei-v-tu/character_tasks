@@ -19,10 +19,10 @@ class LLMAPIFactory:
 def make_llm_request(
     client,
     messages: list[dict[str, str]],
-    model: str  = None,
+    model: str = None,
     temperature: float = 1.0,
     max_tokens: int = 4000,
-    response_format: str  = None,
+    response_format: str = None,
     retries: int = 3,
 ) -> str:
     if response_format not in [{"type": "json_object"}, None]:
