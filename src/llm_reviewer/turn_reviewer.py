@@ -1,8 +1,8 @@
 import os
 import json
 
-from src.llm_reviewer.constants import PATH_TO_CONFIG, PATH_TO_SECRETS, PROJECT_CODEBASE
-from src.llm_reviewer.llm_api import LLMAPIFactory, load_config, make_llm_request
+from src.llm_reviewer.constants import PROJECT_CODEBASE
+from src.llm_reviewer.llm_api import make_llm_request
 
 
 def load_system_prompt(reviewer_name: str) -> str:

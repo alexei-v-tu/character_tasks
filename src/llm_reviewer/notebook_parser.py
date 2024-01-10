@@ -1,12 +1,8 @@
 import json
 
 from fuzzywuzzy import fuzz
-from openai import OpenAI
-
-from src.llm_reviewer.constants import Roles, PATH_TO_SECRETS
-
-with open(PATH_TO_SECRETS, "r") as f:
-    openai_api_key = json.load(f)["openai_api_key"]
+from src.llm_reviewer.llm_api import LLMAPIFactory, make_llm_request
+from src.llm_reviewer.constants import Roles
 
 
 def get_closest_match(query, choices):
@@ -72,35 +68,42 @@ def extract_messages(notebook):
     return messages
 
 
+def predict_role(messages_subsequence):
+    try:
+        llm_client = LLMAPIFactory().get()
+        missing_role = make_llm_request(
+            llm_client,
+            model="gpt-4-1106-preview",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Your task is to accurately predict whether the empty role is a User or an Assistant. You are only allowed to reply with a single word: 'User' or 'Assistant'.",
+                },
+                {
+                    "role": "user",
+                    "content": f"Here's a part of the conversation including an empty role:\n\n{messages_subsequence}",
+                },
+            ],
+            temperature=0,
+            seed=42,
+        )
+        print("Filling out missing header...")
+        assert missing_role in ["User", "Assistant"]
+        return missing_role, None
+    except Exception as e:
+        return None, e
+
+
 def fix_missing_roles(messages):
     """
     Fix missing roles in a list of messages.
 
     :param messages: The list of messages.
     """
-    def predict_role(messages_subsequence):
-        try:
-            openai_client = OpenAI(api_key=openai_api_key)
-            response = openai_client.chat.completions.create(
-                model="gpt-4-1106-preview",
-                messages=[
-                    {"role":"system", "content": "Your task is to accurately predict whether the empty role is a User or an Assistant. You are only allowed to reply with a single word: 'User' or 'Assistant'."},
-                    {"role":"user", "content": f"Here's a part of the conversation including an empty role:\n\n{messages_subsequence}"}
-                ],
-                temperature=0,
-                seed=42
-            )
-            print(response.choices[0])
-            missing_role = response.choices[0].message.content
-            assert missing_role in ["User", "Assistant"]
-            return missing_role, None
-        except Exception as e:
-            return None, e
-
     errors = []
     for i in range(len(messages)):
         if messages[i]["role"] == "":
-            subsequence = messages[max(0, i-2):min(len(messages), i+3)]
+            subsequence = messages[max(0, i - 2) : min(len(messages), i + 3)]
             messages[i]["role"], error = predict_role(subsequence)
             if error is not None:
                 errors.append(error)

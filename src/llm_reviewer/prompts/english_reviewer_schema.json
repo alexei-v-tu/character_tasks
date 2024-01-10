@@ -27,7 +27,8 @@
       "type": "number",
       "minimum": 1,
       "maximum": 5,
-      "description": "A score between 1 and 5, where 1 is the worst and 5 is the best."
+      "description": "A score between 1 and 5, where 1 is the worst and 5 is the best.",
+      "required": true
     }
   }
 }
