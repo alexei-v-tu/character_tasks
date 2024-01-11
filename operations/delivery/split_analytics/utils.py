@@ -53,9 +53,13 @@ def process_batch(batch_folder, limit=None):
 def get_delivered_df(batch_ids=[1, 2, 3, 4]):
     delivered_dfs = []
     for batch_id in batch_ids:
-        df = download_sheet_as_df(
-            service_account_path, delivery_sheet_id, f"Batch {batch_id}"
-        )
+        if batch_id == 5:
+            delivered_b5_mock_df = pd.read_csv(DATA_DIR + "batch5_delivered_mock.csv")
+            df = delivered_b5_mock_df
+        else:
+            df = download_sheet_as_df(
+                service_account_path, delivery_sheet_id, f"Batch {batch_id}"
+            )
         df = df.assign(batch_id=batch_id)
         delivered_dfs.append(df)
     delivered_df = pd.concat(delivered_dfs, ignore_index=True)

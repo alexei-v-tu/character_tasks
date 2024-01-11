@@ -18,7 +18,7 @@ class SummaryResult(BaseModel):
     """Data model for summary."""
 
     summary: str = Field(
-        description="A short summary containing up to 4 sentences focused on the specific theme."
+        description="A short summary containing 1 sentence, 15 words max, focused on the specific theme. [super concise language]"
     )
     tags: List[str] = Field(
         description="A list of tags(up to 5) for the conversation from the requested theme perspective."
@@ -33,7 +33,7 @@ class SummaryTheme(BaseModel):
 
 def exec_summary(conversation: List[List[dict]], summary_theme: SummaryTheme):
     prompt_template_str = """
-    Given the following conversation, please, generate an executive summary for a given theme and through its lense, not of the conversation.
+    Given the following conversation, please, generate an executive summary for a given theme, not of the conversation.
     You are one of many specialized analyzers, so precisely focus on your target summary theme and topic.
 
     Summary Theme:
@@ -58,7 +58,7 @@ def process_conversation(conversation):
     output = exec_summary(
         conversation,
         SummaryTheme(
-            theme="User Use Case, how user uses the Assistant in general terms, **for what** the User is using it and **how**"
+            theme="User Use Case, why user uses the Assistant in this conversation, in general terms, **for what** the User is using it. Not from a technical perspective, but from a daily life situation perspective. Example: work, homework, exam, studying, inteview, debugging, etc..."
         ),
     )
     record = {
