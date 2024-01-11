@@ -23,13 +23,12 @@ import pandas as pd
 
 
 class BehaviourTag(BaseModel):
-    """Datamodel for behaviour tag with top level and sub level category calssification. detailed_level is for a very short( up to 10 words) explanation.
-    If the Tag you determined is not among provided categories or subcategories, set `new_filled_category` to True otherwise to False and create a new Tag.
+    """Datamodel for behaviour tag with top level and sub level category calssification.
+    If the Tag you determined is not among provided subcategories, set `new_filled_category` to True otherwise to False and create a new Tag.
     """
 
     top_level: str
     sub_level: str
-    detailed_level: str
     new_filled_category: bool
 
 
@@ -91,8 +90,8 @@ data = [
     ("Respond to Assistant", "Answer a question"),
     ("Respond to Assistant", "End the conversation"),
     ("Respond to Assistant", "Clarify an ambiguity"),
-    ("User emotional state", "User is confused"),
-    ("User emotional state", "User is frustrated"),
+    # ("User emotional state", "User is confused"),
+    # ("User emotional state", "User is frustrated"),
     ("User actions", "User contradicts themselves"),
     ("User actions", "User confronts assistant about mistakes"),
     ("User actions", "User makes mistakes"),
@@ -103,24 +102,19 @@ behavioural_tags_df = pd.DataFrame(data, columns=["top_level", "sub_level"])
 def format_topics_with_additional(df):
     topics = []
     last_highlevel = None
+    custom_sub_cat = "[[fill out another behaviour tag sub level you think best fits the conversation and is not included, 3 words max]]"
     for _, row in df.iterrows():
         highlevel = row["top_level"]
         sublevel = row["sub_level"]
         if highlevel != last_highlevel and last_highlevel is not None:
-            topics.append(
-                f"{last_highlevel} -> [[fill out another behaviour tag sub level you think best fits the conversation and is not included]]"
-            )
+            topics.append(f"{last_highlevel} -> {custom_sub_cat}")
 
         topics.append(f"{highlevel} -> {sublevel.strip(' - ')}")
         # Add another entry with the same highlevel topic but a placeholder for a new sublevel topic
         # only if the highlevel topic has changed from the last one processed
         last_highlevel = highlevel
-    topics.append(
-        f"{last_highlevel} -> [[fill out another behaviour tag sub level you think best fits the conversation and is not included]]"
-    )
-    topics.append(
-        "Other -> [[fill out another behaviour tag sub level you think best fits the conversation and is not included]]"
-    )
+    topics.append(f"{last_highlevel} -> {custom_sub_cat}")
+    topics.append(f"Other -> {custom_sub_cat}")
     return "\n".join(topics)
 
 

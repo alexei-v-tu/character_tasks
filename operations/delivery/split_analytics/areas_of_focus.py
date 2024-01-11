@@ -22,24 +22,19 @@ from utils import process_batch, service_account_path
 def format_topics_with_additional(df):
     topics = []
     last_highlevel = None
+    custom_sub_cat = "[[fill out another topic you think best fits the conversation and is not included, 3 words max]]"
     for _, row in df.iterrows():
         highlevel = row["Highlevel_topic"]
         sublevel = row["Sublevel_topic"]
         if highlevel != last_highlevel and last_highlevel is not None:
-            topics.append(
-                f"{last_highlevel} -> [[fill out another topic you think best fits the conversation and is not included]]"
-            )
+            topics.append(f"{last_highlevel} -> {custom_sub_cat}")
 
         topics.append(f"{highlevel} -> {sublevel.strip(' - ')}")
         # Add another entry with the same highlevel topic but a placeholder for a new sublevel topic
         # only if the highlevel topic has changed from the last one processed
         last_highlevel = highlevel
-    topics.append(
-        f"{last_highlevel} -> [[fill out another topic you think best fits the conversation and is not included]]"
-    )
-    topics.append(
-        "Other -> [[fill out another topic you think best fits the conversation and is not included]]"
-    )
+    topics.append(f"{last_highlevel} -> {custom_sub_cat}")
+    topics.append(f"Other -> {custom_sub_cat}")
     return "\n".join(topics)
 
 

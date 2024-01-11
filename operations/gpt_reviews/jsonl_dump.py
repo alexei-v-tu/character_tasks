@@ -185,7 +185,8 @@ def download_and_parse_notebook(service_account_file, file_id, revision_id=None)
 
     return {
         "id": file_id,
-        "colab_link": f"https://colab.research.google.com/drive/{file_id}",
+        "colab_link": f"https://colab.research.google.com/drive/{file_id}"
+        + (f"#revisionId={revision_id}" if revision_id is not None else ""),
         "revision_id": revision_id,
         **parsed_nb,
     }
