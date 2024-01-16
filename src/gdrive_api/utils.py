@@ -181,6 +181,7 @@ def list_all_files_in_folder(service: Resource, folder_id: str) -> list[dict]:
             .execute()
         )
         all_files.extend(response.get("files", []))
+        page_number += 1
     return all_files
 
 
